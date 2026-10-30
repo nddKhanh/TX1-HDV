@@ -11,6 +11,9 @@ permissions:
   contents: read
 
 jobs:
+  # =========================
+  # 1. BUILD
+  # =========================
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -34,6 +37,9 @@ jobs:
       - name: Compile project
         run: mvn --batch-mode clean compile
 
+  # =========================
+  # 2. TEST WITH MYSQL
+  # =========================
   test:
     name: Test
     needs: build
@@ -42,6 +48,20 @@ jobs:
     defaults:
       run:
         working-directory: TX1
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: shop_management
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - name: Checkout source
@@ -56,8 +76,16 @@ jobs:
           cache-dependency-path: TX1/pom.xml
 
       - name: Run tests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/shop_management?useSSL=false&serverTimezone=UTC
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: rootpassword
+          SPRING_JPA_HIBERNATE_DDL_AUTO: update
         run: mvn --batch-mode test
 
+  # =========================
+  # 3. PACKAGE
+  # =========================
   package:
     name: Package
     needs: test
@@ -89,6 +117,9 @@ jobs:
           path: TX1/target/*.jar
           if-no-files-found: error
 
+  # =========================
+  # 4. DEPLOY TO MINIKUBE
+  # =========================
   deploy:
     name: Deploy to Minikube
     needs: package
