@@ -15,6 +15,10 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: TX1
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -25,6 +29,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+          cache-dependency-path: TX1/pom.xml
 
       - name: Compile project
         run: mvn --batch-mode clean compile
@@ -34,6 +39,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: TX1
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -44,6 +53,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+          cache-dependency-path: TX1/pom.xml
 
       - name: Run tests
         run: mvn --batch-mode test
@@ -53,6 +63,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: TX1
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -63,6 +77,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+          cache-dependency-path: TX1/pom.xml
 
       - name: Package JAR
         run: mvn --batch-mode package -DskipTests
@@ -71,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: shop-management-jar
-          path: target/*.jar
+          path: TX1/target/*.jar
           if-no-files-found: error
 
   deploy:
@@ -87,34 +102,55 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: shop-management-jar
-          path: target
+          path: TX1/target
 
       - name: Check Minikube
         shell: powershell
         run: |
           minikube status
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           minikube kubectl -- get nodes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Docker image
         shell: powershell
         run: |
           minikube image build -t shop-management-app:latest .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Deploy MySQL
         shell: powershell
         run: |
           minikube kubectl -- apply -f k8s/mysql-deployment.yml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           minikube kubectl -- rollout status deployment/mysql --timeout=180s
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Deploy Spring Boot
         shell: powershell
         run: |
           minikube kubectl -- apply -f k8s/app-deployment.yml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           minikube kubectl -- rollout restart deployment/shop-app
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           minikube kubectl -- rollout status deployment/shop-app --timeout=300s
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Apply ServiceMonitor
+        shell: powershell
+        run: |
+          minikube kubectl -- apply -f k8s/app-service-monitor.yml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check deployment
         shell: powershell
         run: |
           minikube kubectl -- get pods
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           minikube kubectl -- get services
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
